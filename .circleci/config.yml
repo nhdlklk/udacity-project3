@@ -92,7 +92,57 @@ jobs:
             npm install
             npm audit fix --audit-level=critical --force
             npm audit fix --force
-            npm audit --audit-level=critical           
+            npm audit --audit-level=critical
+  deploy-infrastructure:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run:
+          name: Install Dependencies
+          command: |
+            cat .circleci/ansible/inventory.txt
+            ls ~/project/.circleci/ansible/
+            cat ~/project/.circleci/ansible/inventory.txt
+            yum -y install tar gzip jq npm
+      - run:
+          name: "Ensure-back-end-infrastructure-exists"
+          command: |
+            aws cloudformation deploy \
+              --template-file .circleci/files/backend.yml \
+              --tags project=udapeople \
+              --stack-name udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}  \
+              --parameter-overrides ID=${CIRCLE_WORKFLOW_ID:0:7}  
+              # exit 1
+      - run:
+          name: "Ensure-front-end-infrastructure-exist"
+          command: |
+            aws cloudformation deploy \
+              --template-file .circleci/files/frontend.yml \
+              --tags project=udapeople \
+              --stack-name udapeople-frontend-${CIRCLE_WORKFLOW_ID:0:7} \
+              --parameter-overrides ID=${CIRCLE_WORKFLOW_ID:0:7}  
+              # exit 1
+      - run:
+          name: "Add-back-end-ip-to-ansible-inventory "
+          command: |
+            # Fetch the public IP of the EC2 instance
+            #  "Name=tag:project,Values=udapeople"
+            EC2_PUBLIC_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" --query "Reservations[*].Instances[*].PublicIpAddress" --output text)
+
+            # Append the IP to the inventory.txt file
+            echo $EC2_PUBLIC_IP >> ~/project/.circleci/ansible/inventory.txt
+            # echo "your-instance-name ansible_host=$EC2_PUBLIC_IP ansible_user=ubuntu" >> .circleci/ansible/inventory.txt
+            cat ~/project/.circleci/ansible/inventory.txt
+            # Persist the modified inventory file to the workspace
+            # cp .circleci/ansible/inventory.txt $HOME/workspace/inventory.txt
+            # # exit 1
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - project/.circleci/ansible/inventory.txt
+      - destroy-environment
+      # Here's where you will add some code to rollback on failure              
 workflows:
   default:
     jobs:
